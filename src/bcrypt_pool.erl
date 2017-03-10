@@ -17,7 +17,8 @@
           size = 0,
           busy = 0,
           requests = queue:new(),
-          ports = queue:new()
+          ports = queue:new(),
+          queue_limit = 0
          }).
 
 -record(req, {mon, from}).
@@ -31,14 +32,15 @@ hashpw(Password, Salt) -> do_call(fun bcrypt_port:hashpw/3, [Password, Salt]).
 
 init([]) ->
     {ok, Size} = application:get_env(bcrypt, pool_size),
-    {ok, #state{size = Size}}.
+    QueueLimit = application:get_env(bcrypt, queue_limit, infinity),
+    {ok, #state{size = Size, queue_limit = QueueLimit}}.
 
 terminate(shutdown, _) -> ok.
 
 handle_call(request, {RPid, _} = From, #state{ports = P} = State) ->
     case queue:out(P) of
         {empty, P} ->
-            #state{size = Size, busy = B, requests = R} = State,
+            #state{size = Size, busy = B, requests = R, queue_limit = L} = State,
             B1 =
                 if Size > B ->
                         {ok, _} = bcrypt_port_sup:start_child(),
@@ -47,9 +49,15 @@ handle_call(request, {RPid, _} = From, #state{ports = P} = State) ->
                         B
                 end,
             RRef = erlang:monitor(process, RPid),
-            R1 = queue:in(#req{mon = RRef, from = From}, R),
-            {noreply, State#state{requests = R1,
-                                  busy = B1}};
+            % Only queue requests if we haven't spawned all our available port processes
+            % or we're under the queue_limit, otherwise return queue_full right away.
+            case {L, queue:len(R)} of
+                {L, QueueSize} when Size > B orelse L =:= infinity orelse L > QueueSize ->
+                    R1 = queue:in(#req{mon = RRef, from = From}, R),
+                    {noreply, State#state{requests = R1, busy = B1}};
+                {L, QueueSize} ->
+                    {reply, {queue_full, nil}, State#state{busy = B1}}
+            end;
         {{value, PPid}, P1} ->
             #state{busy = B} = State,
             {reply, {ok, PPid}, State#state{busy = B + 1, ports = P1}}
@@ -76,6 +84,10 @@ handle_info(Msg, _) -> exit({unknown_info, Msg}).
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 do_call(F, Args0) ->
-    {ok, Pid} = gen_server:call(?MODULE, request, infinity),
-    Args = [Pid|Args0],
-    apply(F, Args).
+    case gen_server:call(?MODULE, request, infinity) of
+        {ok, Pid} ->
+            Args = [Pid|Args0],
+            apply(F, Args);
+        {queue_full, nil} ->
+            {error, queue_full}
+    end.
