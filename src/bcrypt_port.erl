@@ -80,7 +80,8 @@ handle_call({hashpw, Password, Salt}, From, State) ->
     Port = State#state.port,
     Data = term_to_binary({?CMD_HASH, From, {Password, Salt}}),
     port_command(Port, Data),
-    {noreply, State};
+    {ok, Timeout} = application:get_env(bcrypt, timeout),
+    {noreply, State, Timeout};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(Msg, _, _) -> exit({unknown_call, Msg}).
@@ -105,4 +106,11 @@ handle_info({Port, {exit_status, Status}}, #state{port=Port}=State) ->
     %% Rely on whomever is supervising this process to restart.
     ?BCRYPT_WARNING("Port died: ~p", [Status]),
     {stop, port_died, State};
+
+handle_info(timeout, #state{port=Port}=State) ->
+    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+    os:cmd(io_lib:format("kill -9 ~p", [OsPid])),
+    {stop, bcrypt_timeout, State};
+
+
 handle_info(Msg, _) -> exit({unknown_info, Msg}).

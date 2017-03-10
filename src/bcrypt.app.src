@@ -13,7 +13,10 @@
          {mechanism, nif},
 
          % Size of port program pool
-         {pool_size, 4}
+         {pool_size, 4},
+
+         % port call timeout
+         {timeout, infinity}
         ]}
  ]
 }.
