@@ -11,7 +11,7 @@ start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 start_child() -> supervisor:start_child(?MODULE, []).
 
 init([]) ->
-    {ok, {{simple_one_for_one, 1, 1},
+    {ok, {{simple_one_for_one, 1 * application:get_env(bcrypt, pool_size, 1), 1},
           [{undefined,
             {bcrypt_port, start_link, []},
             transient, brutal_kill, worker, [bcrypt_port]}]}}.
