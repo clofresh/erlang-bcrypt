@@ -164,29 +164,91 @@ static ERL_NIF_TERM bcrypt_hashpw(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     task_t *task;
     ErlNifPid pid;
 
-    if (argc != 5)
+    if (argc == 2)
+    {
+        ErlNifBinary password_bin;
+        ErlNifBinary salt_bin;
+        char password[1024] = { 0 };
+        char salt[1024] = { 0 };
+        char encrypted[1024] = { 0 };
+
+        if (!enif_inspect_iolist_as_binary(
+                env, enif_make_copy(env, argv[0]),
+                &password_bin)) {
+            return enif_make_tuple2(
+                env,
+                enif_make_atom(env, "error"),
+                enif_make_string(env, "bad password value", ERL_NIF_LATIN1));
+        }
+
+        if (!enif_inspect_iolist_as_binary(
+                env, enif_make_copy(env, argv[1]),
+                &salt_bin)) {
+            return enif_make_tuple2(
+                env,
+                enif_make_atom(env, "error"),
+                enif_make_string(env, "bad salt value", ERL_NIF_LATIN1));
+        }
+
+        size_t password_sz = password_bin.size;
+        if (password_sz > 1024)
+        {
+            return enif_make_tuple2(
+                env,
+                enif_make_atom(env, "error"),
+                enif_make_string(env, "password value is longer than 1024 bytes", ERL_NIF_LATIN1));
+        }
+        (void)memcpy(&password, password_bin.data, password_sz);
+
+        size_t salt_sz = salt_bin.size;
+        if (salt_sz > 1024)
+        {
+            return enif_make_tuple2(
+                env,
+                enif_make_atom(env, "error"),
+                enif_make_string(env, "salt value is longer than 1024 bytes", ERL_NIF_LATIN1));
+        }
+        (void)memcpy(&salt, salt_bin.data, salt_sz);
+
+        if (bcrypt(encrypted, password, salt) == -1) {
+            return enif_make_tuple2(
+                env,
+                enif_make_atom(env, "error"),
+                enif_make_string(env, "bcrypt failed", ERL_NIF_LATIN1));
+        }
+
+        return enif_make_tuple2(
+            env,
+            enif_make_atom(env, "ok"),
+            enif_make_string(env, encrypted, ERL_NIF_LATIN1));
+    }
+    else if (argc == 5)
+    {
+        bcrypt_privdata_t *priv = (bcrypt_privdata_t*)enif_priv_data(env);
+
+        if (!enif_get_resource(env, argv[0], priv->bcrypt_rt, (void**)(&ctx)))
+            return enif_make_badarg(env);
+
+        if (!enif_is_ref(env, argv[1]))
+            return enif_make_badarg(env);
+
+        if (!enif_get_local_pid(env, argv[2], &pid))
+            return enif_make_badarg(env);
+
+        ERL_NIF_TERM orig_terms[] = { argv[4], argv[3] };
+        task = alloc_init_task(HASH, argv[1], pid, 2, orig_terms);
+
+        if (!task)
+            return enif_make_badarg(env);
+
+        async_queue_push(ctx->queue, task);
+
+        return enif_make_atom(env, "ok");
+    }
+    else
+    {
         return enif_make_badarg(env);
-
-    bcrypt_privdata_t *priv = (bcrypt_privdata_t*)enif_priv_data(env);
-
-    if (!enif_get_resource(env, argv[0], priv->bcrypt_rt, (void**)(&ctx)))
-        return enif_make_badarg(env);
-
-    if (!enif_is_ref(env, argv[1]))
-        return enif_make_badarg(env);
-
-    if (!enif_get_local_pid(env, argv[2], &pid))
-        return enif_make_badarg(env);
-
-    ERL_NIF_TERM orig_terms[] = { argv[4], argv[3] };
-    task = alloc_init_task(HASH, argv[1], pid, 2, orig_terms);
-
-    if (!task)
-        return enif_make_badarg(env);
-
-    async_queue_push(ctx->queue, task);
-
-    return enif_make_atom(env, "ok");
+    }
 }
 
 static ERL_NIF_TERM bcrypt_create_ctx(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -210,6 +272,7 @@ static ERL_NIF_TERM bcrypt_create_ctx(ErlNifEnv* env, int argc, const ERL_NIF_TE
 static ErlNifFunc bcrypt_nif_funcs[] =
 {
     {"encode_salt", 2, bcrypt_encode_salt},
+    {"hashpw", 2, bcrypt_hashpw},
     {"hashpw", 5, bcrypt_hashpw},
     {"create_ctx", 0, bcrypt_create_ctx},
 };

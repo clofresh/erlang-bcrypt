@@ -22,7 +22,7 @@
 
 %% API
 -export([init/0]).
--export([gen_salt/1, hashpw/5, create_ctx/0]).
+-export([gen_salt/1, hashpw/2, hashpw/5, create_ctx/0]).
 
 -on_load(init/0).
 
@@ -79,6 +79,9 @@ create_ctx() ->
 %% @end
 %%--------------------------------------------------------------------
 hashpw(_Ctx, _Ref, _Pid, _Password, _Salt) ->
+    nif_stub_error(?LINE).
+
+hashpw(_Password, _Salt) ->
     nif_stub_error(?LINE).
 
 nif_stub_error(Line) ->
