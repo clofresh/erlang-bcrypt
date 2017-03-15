@@ -272,7 +272,7 @@ static ERL_NIF_TERM bcrypt_create_ctx(ErlNifEnv* env, int argc, const ERL_NIF_TE
 static ErlNifFunc bcrypt_nif_funcs[] =
 {
     {"encode_salt", 2, bcrypt_encode_salt},
-    {"hashpw", 2, bcrypt_hashpw},
+    {"hashpw", 2, bcrypt_hashpw, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"hashpw", 5, bcrypt_hashpw},
     {"create_ctx", 0, bcrypt_create_ctx},
 };
